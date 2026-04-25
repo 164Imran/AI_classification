@@ -63,23 +63,17 @@ def simulate(I_ext, T=50, dt=0.01):
 
 # Simulation
 fig, ax = plt.subplots()
-plt.ion()
-
-for i_val in np.linspace(0, 50, 100):
-    I_ext = i_val  # scalaire utilisé par derivative() via la portée globale
-    t, V, n, m, h = simulate(I_ext, T=100, dt=0.01)
-
-    ax.clear()
-    ax.plot(t, V * 0.05, c='purple', label='V×0.05')
-    ax.plot(t, n, c='g', label='n')
-    ax.plot(t, m, c='r', label='m')
-    ax.plot(t, h, c='b', label='h')
-    ax.set_title(f'Hodgkin-Huxley — I_ext = {i_val:.1f} µA/cm²')
-    ax.set_xlabel('Time (ms)')
-    ax.set_ylabel('Voltage (mV) / Gating Variables')
-    ax.legend()
-    ax.grid()
-    plt.pause(0.05)
+I_ext = 10.0  # µA/cm²
+t, V, n, m, h = simulate(I_ext=10.0)
+ax.plot(t, V * 0.05, c='purple', label='V×0.05')
+ax.plot(t, n, c='g', label='n')
+ax.plot(t, m, c='r', label='m')
+ax.plot(t, h, c='b', label='h')
+ax.set_title(f'Hodgkin-Huxley — I_ext = {I_ext:.1f} µA/cm²')
+ax.set_xlabel('Time (ms)')
+ax.set_ylabel('Voltage (mV) / Gating Variables')
+ax.legend()
+ax.grid()
 
 plt.ioff()
 plt.show()
