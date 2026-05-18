@@ -1,74 +1,87 @@
-# Hodgkin-Huxley Neuron Model Simulator
+# Neural Network — MSE Loss on a Star Curve
 
-A Python implementation of the **Hodgkin-Huxley model** — the seminal biophysical model of action potential generation in neurons, awarded the Nobel Prize in Physiology or Medicine (1963).
+Neural network implemented from scratch with NumPy, trained with **MSE loss** to learn a geometric transformation: mapping a circle to a star-shaped curve.
 
-## Overview
+---
 
-This simulation models the electrical activity of a neuron membrane by numerically integrating four coupled differential equations that describe:
+## Task
 
-- **V** — membrane potential (mV)
-- **n** — K⁺ channel activation gate
-- **m** — Na⁺ channel activation gate
-- **h** — Na⁺ channel inactivation gate
-
-The numerical integration uses a **4th-order Runge-Kutta (RK4)** method for accuracy and stability.
-
-## Physics of the Model
-
-The membrane potential evolves according to:
+The network learns the mapping:
 
 ```
-Cm · dV/dt = I_ext - g_Na·m³·h·(V - E_Na) - g_K·n⁴·(V - E_K) - g_L·(V - E_L)
+X : circle (parametric, 100 points in R²)
+y : star   (5-branch, interpolated, 100 points in R²)
 ```
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `Cm` | 1.0 µF/cm² | Membrane capacitance |
-| `g_Na` | 120.0 mS/cm² | Max Na⁺ conductance |
-| `g_K` | 36.0 mS/cm² | Max K⁺ conductance |
-| `g_L` | 0.3 mS/cm² | Leak conductance |
-| `E_Na` | +50 mV | Na⁺ reversal potential |
-| `E_K` | −77 mV | K⁺ reversal potential |
-| `E_L` | −54.387 mV | Leak reversal potential |
+Both are 2D curves parametrized by `t ∈ [0, 2π]`. The network is trained to predict `y` from `X` purely by minimizing squared error — no labels, no classes, just regression on curve coordinates.
 
-## Features
+---
 
-- Full RK4 numerical integration of the HH equations
-- Live animated plot showing membrane potential and gating variables
-- Sweep of external current `I_ext` from 0 to 50 µA/cm² to visualize the **firing threshold**
+## Architecture
 
-## Requirements
+```
+Input  →  2 neurons  (x, y coordinates of the circle)
+Hidden →  32 neurons, tanh activation
+Output →  2 neurons  (x, y coordinates of the star)
+```
+
+Notation: `[2, 32, 2]`
+
+Weights initialized with LeCun initialization, biases at zero, fixed seed for reproducibility.
+
+---
+
+## Implementation
+
+Everything is implemented from scratch with NumPy:
+
+- **Forward pass**: layer-by-layer matrix multiply + tanh (hidden), linear (output)
+- **Backward pass**: manual backpropagation, MSE gradient
+- **Update**: vanilla gradient descent
+
+Loss at each step:
+
+$$\mathcal{L} = \frac{1}{N} \sum_{i=1}^{N} \| \hat{y}_i - y_i \|^2$$
+
+---
+
+## Training
+
+| Hyperparameter | Value |
+|---|---|
+| Iterations | 15 000 |
+| Initial learning rate | 0.05 |
+| LR decay (after iter 1200) | 0.01 |
+| Optimizer | Gradient descent |
+| Loss | MSE |
+
+---
+
+## Output
+
+Animated plot with two panels:
+- **Left**: predicted curve vs target star, updated at each logged iteration
+- **Right**: MSE loss curve over training
+
+---
+
+## Dependencies
 
 ```
 numpy
 matplotlib
+tqdm
+scikit-learn
 ```
-
-Install with:
 
 ```bash
-pip install numpy matplotlib
+pip install numpy matplotlib tqdm scikit-learn
 ```
 
-## Usage
+---
+
+## Run
 
 ```bash
-python NN/hodgkin_huxley_neuro.py
+python Neural_network.py
 ```
-
-The simulation will open an animated window sweeping through 100 values of external current. You will observe:
-- **Sub-threshold** regime: membrane potential returns to rest
-- **Action potential** generation: stereotypical spike when `I_ext` crosses the threshold (~6.3 µA/cm²)
-- **Repetitive firing** at higher stimulation intensities
-
-## Output
-
-The live plot displays:
-- `V × 0.05` (purple) — scaled membrane potential
-- `n` (green) — K⁺ activation
-- `m` (red) — Na⁺ activation
-- `h` (blue) — Na⁺ inactivation
-
-## References
-
-- Hodgkin, A.L. & Huxley, A.F. (1952). *A quantitative description of membrane current and its application to conduction and excitation in nerve.* Journal of Physiology, 117(4), 500–544.
