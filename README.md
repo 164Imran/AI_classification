@@ -1,74 +1,167 @@
-# Hodgkin-Huxley Neuron Model Simulator
+# Physics-Informed Neural Networks (PINNs)
 
-A Python implementation of the **Hodgkin-Huxley model** — the seminal biophysical model of action potential generation in neurons, awarded the Nobel Prize in Physiology or Medicine (1963).
+Implementation of a **Physics-Informed Neural Network** from scratch in PyTorch to solve the **1D heat equation** (parabolic PDE).
 
-## Overview
+---
 
-This simulation models the electrical activity of a neuron membrane by numerically integrating four coupled differential equations that describe:
+## What is a PINN?
 
-- **V** — membrane potential (mV)
-- **n** — K⁺ channel activation gate
-- **m** — Na⁺ channel activation gate
-- **h** — Na⁺ channel inactivation gate
+A PINN is a neural network trained not only on data, but directly on the physics of a problem — encoded as a PDE. Instead of fitting labeled samples, the network learns a solution `u(x, t)` that satisfies:
 
-The numerical integration uses a **4th-order Runge-Kutta (RK4)** method for accuracy and stability.
+- the **governing equation** (the PDE itself)
+- the **initial condition** (IC)
+- the **boundary conditions** (BC)
 
-## Physics of the Model
+All three constraints are embedded directly into the loss function. No numerical solver, no grid, no discretization.
 
-The membrane potential evolves according to:
+---
 
-```
-Cm · dV/dt = I_ext - g_Na·m³·h·(V - E_Na) - g_K·n⁴·(V - E_K) - g_L·(V - E_L)
-```
+## Problem: 1D Heat Equation
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `Cm` | 1.0 µF/cm² | Membrane capacitance |
-| `g_Na` | 120.0 mS/cm² | Max Na⁺ conductance |
-| `g_K` | 36.0 mS/cm² | Max K⁺ conductance |
-| `g_L` | 0.3 mS/cm² | Leak conductance |
-| `E_Na` | +50 mV | Na⁺ reversal potential |
-| `E_K` | −77 mV | K⁺ reversal potential |
-| `E_L` | −54.387 mV | Leak reversal potential |
+$$\frac{\partial u}{\partial t} = \alpha \frac{\partial^2 u}{\partial x^2}, \quad x \in [0,1],\ t \in [0,1]$$
 
-## Features
+with:
 
-- Full RK4 numerical integration of the HH equations
-- Live animated plot showing membrane potential and gating variables
-- Sweep of external current `I_ext` from 0 to 50 µA/cm² to visualize the **firing threshold**
+| Constraint | Expression |
+|---|---|
+| Initial condition | `u(x, 0) = 0` |
+| Boundary condition (left) | `u(0, t) = 0` |
+| Boundary condition (right) | `u(1, t) = 0` |
+| Diffusivity | `α = 0.01` |
 
-## Requirements
+The network learns the function `u(x, t)` that satisfies this system over the entire domain.
+
+---
+
+## Architecture
 
 ```
-numpy
-matplotlib
+Input  →  [x, t]           (2 neurons)
+Hidden →  8 neurons, tanh
+Output →  u(x, t)          (1 neuron, linear)
 ```
 
-Install with:
+Notation: `[2, 8, 1]`
 
-```bash
-pip install numpy matplotlib
+Weights are initialized with **LeCun initialization** (`σ = 1/√fan_in`), biases at zero. All tensors use `float64` for numerical precision when computing second-order derivatives.
+
+---
+
+## Loss Function
+
+The total loss combines three terms:
+
+$$\mathcal{L} = \mathcal{L}_{\text{res}} + \mathcal{L}_{\text{IC}} + \mathcal{L}_{\text{BC}}$$
+
+### Physics Residual — `L_res`
+
+Evaluated at **collocation points** sampled uniformly inside the domain:
+
+$$\mathcal{L}_{\text{res}} = \frac{1}{N_c} \sum_{i=1}^{N_c} \left( \frac{\partial u}{\partial t}(x_i, t_i) - \alpha \frac{\partial^2 u}{\partial x^2}(x_i, t_i) \right)^2$$
+
+The partial derivatives are computed with `torch.func.grad` (functional API), enabling exact automatic differentiation through the network.
+
+### Initial Condition — `L_IC`
+
+$$\mathcal{L}_{\text{IC}} = \frac{1}{N_{ic}} \sum_{i=1}^{N_{ic}} \left( u(x_i, 0) - 0 \right)^2$$
+
+### Boundary Conditions — `L_BC`
+
+Dirichlet BCs at `x = 0` and `x = 1`:
+
+$$\mathcal{L}_{\text{BC}} = \frac{1}{N_{bc}} \sum_{i=1}^{N_{bc}} \left( u(x_{bc,i}, t_i) - 0 \right)^2$$
+
+---
+
+## Automatic Differentiation with `torch.func`
+
+The key challenge in PINNs is computing spatial and temporal derivatives of the network output. This implementation uses PyTorch's **functional transform API**:
+
+```python
+du_dt  = grad(u, argnums=1)(x, t)        # ∂u/∂t
+du_dx  = grad(u, argnums=0)              # ∂u/∂x (function)
+du_dxx = grad(du_dx, argnums=0)(x, t)   # ∂²u/∂x²
 ```
 
-## Usage
+`vmap` is used to efficiently batch these scalar operations across all collocation/IC/BC points without explicit loops:
 
-```bash
-python NN/hodgkin_huxley_neuro.py
+```python
+r = vmap(lambda x, t: residual(params, x, t))(x_col, t_col)
 ```
 
-The simulation will open an animated window sweeping through 100 values of external current. You will observe:
-- **Sub-threshold** regime: membrane potential returns to rest
-- **Action potential** generation: stereotypical spike when `I_ext` crosses the threshold (~6.3 µA/cm²)
-- **Repetitive firing** at higher stimulation intensities
+---
+
+## Training
+
+| Hyperparameter | Value |
+|---|---|
+| Collocation points (`N_col`) | 1000 |
+| IC points (`N_ic`) | 100 |
+| BC points (`N_bc`) | 100 |
+| Iterations | 4000 |
+| Initial learning rate | 0.05 |
+| LR decay (after iter 1200) | 0.01 |
+| Optimizer | Gradient descent (manual, via `torch.func.grad`) |
+
+Training is fully functional — no `torch.nn.Module`, no `.backward()`. Gradients of the loss with respect to all parameters are computed via `grad(loss_physics, argnums=0)(params, ...)`.
+
+---
+
+## Sampling Strategy
+
+Points are sampled randomly (Monte Carlo) on each run:
+
+```
+x_col, t_col  ~ Uniform([0,1])²         # interior collocation
+x_ic          ~ Uniform([0,1]), t=0      # initial condition line
+x_bc = {0,1}, t_bc ~ Uniform([0,1])     # left and right boundaries
+```
+
+This avoids grid artifacts and generalizes well to irregular domains.
+
+---
 
 ## Output
 
-The live plot displays:
-- `V × 0.05` (purple) — scaled membrane potential
-- `n` (green) — K⁺ activation
-- `m` (red) — Na⁺ activation
-- `h` (blue) — Na⁺ inactivation
+After training, the network is evaluated on a 1000×1000 grid over `[0,10]×[0,10]` and visualized as a 3D surface `u(x, t)`:
+
+```python
+ax.plot_surface(X.numpy(), T.numpy(), U.numpy(), cmap='viridis')
+```
+
+---
+
+## Plots
+
+<!-- Add your plots here -->
+
+---
+
+## Dependencies
+
+```
+torch
+numpy
+matplotlib
+tqdm
+scikit-learn
+```
+
+```bash
+pip install torch numpy matplotlib tqdm scikit-learn
+```
+
+---
+
+## Run
+
+```bash
+python Neural_network.py
+```
+
+---
 
 ## References
 
-- Hodgkin, A.L. & Huxley, A.F. (1952). *A quantitative description of membrane current and its application to conduction and excitation in nerve.* Journal of Physiology, 117(4), 500–544.
+- Raissi, M., Perdikaris, P., & Karniadakis, G.E. (2019). *Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations.* Journal of Computational Physics, 378, 686–707.
+- PyTorch functional API: [`torch.func`](https://pytorch.org/docs/stable/func.html)
