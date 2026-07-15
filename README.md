@@ -16,3 +16,7 @@ MLP mapping a circle point distribution to a star shape, trained with MSE loss a
 ### PINN — Heat Equation
 Physics-Informed Neural Network solving the 1D heat equation from scratch. The PDE residual, initial condition, and boundary conditions are embedded directly into the loss. Partial derivatives are computed via `torch.func.grad` and batched with `vmap` — no `nn.Module`, no `.backward()`.
 **Stack:** PyTorch · [`./pinns/`](./pinns/)
+
+### Neural ODE — Lorenz System
+Neural ODE learning the dynamics of the chaotic Lorenz attractor. An MLP parameterizes the vector field dh/dt, integrated with a hand-written RK4 solver both for data generation and inside the training loop — no `torchdiffeq`, no `nn.Module`. Trained single-step, then evaluated in autoregressive rollout: near-perfect one-step accuracy, divergence after ~200 steps (chaos at work), with a 3D comparison of the true vs. predicted attractor.
+**Stack:** PyTorch · [`./neural_ode/`](./neural_ode/) *(branch [`Neural-ODE`](../../tree/Neural-ODE))*
